@@ -1,5 +1,8 @@
+#アクション名
 name: Terraform Run（Composite）
+#説明文
 description: OIDC + SOPS 復号 + init の共通化
+#外部から与えられるパラメータ
 inputs:
   stack: { required: true }
   role_arn: { required: true }
@@ -7,6 +10,7 @@ inputs:
 runs:
   using: "composite"
   steps:
+    #GitHub Actions の OIDC 機能を使って、Secrets に直接 AWS Key を保存せずに AWS にアクセスできるようにしている。
     - uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ inputs.role_arn }}

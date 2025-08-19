@@ -1,3 +1,12 @@
+; CODEOWNERS は 「どのパスを誰が見るか」 をコード化する仕組み。
+; 最後にマッチしたルールが優先、GitHubユーザー/チームのみ指定可。
+; ブランチ保護の「Require review from Code Owners」 と組み合わせると、レビューを必須化できる。
+
+; 所有者：
+; 個人ユーザー：@username
+; チーム：@org/team-name
+; GitHubでは メールアドレスは不可。必ず GitHub ユーザー/チームを指定します
+
 /stacks/dev/**   @team-dev-platform
 /stacks/stg/**   @team-stg-platform
 /stacks/prd/**   @team-prd-platform
