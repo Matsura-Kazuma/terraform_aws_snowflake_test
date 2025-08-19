@@ -1,0 +1,6 @@
+iac:
+  config:
+    include-non-failures: false
+severity: HIGH,CRITICAL
+exit-code: 1
+ignorefile: .trivyignore

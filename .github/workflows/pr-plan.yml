@@ -1,0 +1,46 @@
+
+name: PR Plan（静的解析 + コスト見積 + Plan）
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths-ignore: ["docs/**","**/*.md"]
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+concurrency:
+  group: tf-${{ github.repository }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.8.5" }
+      - name: AWS 認証（Plan用 Read）
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: pre-commit（fmt/validate/tflint/trivy/checkov/gitleaks）
+        run: |
+          pipx install pre-commit || true
+          pre-commit run --all-files
+      - name: 作業ディレクトリ（例）
+        id: setwd
+        run: echo "wd=stacks/dev/ap-northeast-1/foundation" >> $GITHUB_OUTPUT
+      - name: init
+        run: terraform -chdir=${{ steps.setwd.outputs.wd }} init -backend-config=${{ steps.setwd.outputs.wd }}/backend.hcl
+      - name: plan
+        run: terraform -chdir=${{ steps.setwd.outputs.wd }} plan -input=false -lock=true -out=tfplan.bin
+      - name: Plan 保存
+        uses: actions/upload-artifact@v4
+        with: { name: tfplan, path: ${{ steps.setwd.outputs.wd }}/tfplan.bin }
+      - name: Infracost コメント
+        uses: infracost/actions/comment@v3
+        with:
+          path: ${{ steps.setwd.outputs.wd }}
+          behavior: update
+          fail-on-error: false

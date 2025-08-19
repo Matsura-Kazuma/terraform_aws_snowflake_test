@@ -1,0 +1,26 @@
+
+name: Drift Detect（週次）
+on:
+  schedule: [{ cron: "0 1 * * 1" }]
+  workflow_dispatch: {}
+permissions: { contents: read, id-token: write }
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.8.5" }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: dev foundation 例
+        run: |
+          WD=stacks/dev/ap-northeast-1/foundation
+          terraform -chdir=$WD init -backend-config=$WD/backend.hcl
+          set +e
+          terraform -chdir=$WD plan -refresh-only -detailed-exitcode
+          echo "DRIFT_EXIT=$?" >> $GITHUB_ENV
+          exit 0
+      - run: echo "Drift: $DRIFT_EXIT"

@@ -1,0 +1,8 @@
+name: 再利用 Drift
+on:
+  workflow_call: {}
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4

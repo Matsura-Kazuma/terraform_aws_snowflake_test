@@ -1,0 +1,16 @@
+
+name: Plan アーティファクト Provenance
+on:
+  workflow_run:
+    workflows: ["PR Plan（静的解析 + コスト見積 + Plan）"]
+    types: [completed]
+permissions: { id-token: write, contents: write }
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: tfplan, path: ./artifacts }
+      - uses: actions/attest-build-provenance@v1
+        with: { subject-path: "./artifacts/*" }

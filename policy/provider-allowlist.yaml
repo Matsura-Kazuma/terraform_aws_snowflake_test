@@ -1,0 +1,5 @@
+allowed:
+  - source: hashicorp/aws
+    version_constraint: "~> 5.60"
+  - source: Snowflake-Labs/snowflake
+    version_constraint: "~> 0.99"

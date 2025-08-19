@@ -1,0 +1,6 @@
+version: 0.1
+projects:
+  - path: stacks/dev/ap-northeast-1/foundation
+    name: dev-foundation
+breakdown: { currency: JPY }
+policy: { fail_cost_threshold: 10000 }

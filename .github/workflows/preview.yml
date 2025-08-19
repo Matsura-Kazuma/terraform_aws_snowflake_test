@@ -1,0 +1,51 @@
+
+name: PR Preview（一時環境）
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  upsert:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.8.5" }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PREVIEW_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: state key 生成
+        id: key
+        run: |
+          echo "key=preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate" >> $GITHUB_OUTPUT
+          echo "stack=stacks/preview/templates" >> $GITHUB_OUTPUT
+      - name: init
+        run: terraform -chdir=${{ steps.key.outputs.stack }} init -backend-config="bucket=${{ vars.PREVIEW_TFSTATE_BUCKET }}" -backend-config="key=${{ steps.key.outputs.key }}" -backend-config="region=${{ vars.AWS_REGION }}"
+      - name: apply（作成）
+        run: terraform -chdir=${{ steps.key.outputs.stack }} apply -auto-approve
+  destroy:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.8.5" }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PREVIEW_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: key
+        id: key
+        run: echo "key=preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate" >> $GITHUB_OUTPUT
+      - name: destroy
+        run: |
+          WD=stacks/preview/templates
+          terraform -chdir=$WD init -backend-config="bucket=${{ vars.PREVIEW_TFSTATE_BUCKET }}" -backend-config="key=${{ steps.key.outputs.key }}" -backend-config="region=${{ vars.AWS_REGION }}"
+          terraform -chdir=$WD destroy -auto-approve || true

@@ -1,0 +1,5 @@
+/stacks/dev/**   @team-dev-platform
+/stacks/stg/**   @team-stg-platform
+/stacks/prd/**   @team-prd-platform
+/modules/**      @team-iac-core
+/policy/**       @team-security

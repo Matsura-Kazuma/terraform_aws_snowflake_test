@@ -1,0 +1,16 @@
+# 生成物等を除外
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfplan
+.terraform.lock.hcl
+.DS_Store
+.venv
+dist/
+node_modules/
+**/*.dec.tfvars
+security/keys/*
+!security/keys/.gitkeep
+**/tfplan.bin
+artifacts/
