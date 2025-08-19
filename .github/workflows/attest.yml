@@ -15,6 +15,14 @@ jobs:
         with:
           name: plan-and-json
           path: ./artifacts
+
+      #ダウンロードしたファイル群（./artifacts/*）を **「対象(subject)」**として、SLSA 互換のプロベナンスを生成・署名・保存します。
+      #これにより、**「どのコミット／どのワークフロー・環境で、どの入力（アーティファクト）から、どの手順で生成されたか」**を後から検証可能になります（サプライチェーンの信頼性向上）。
       - uses: actions/attest-build-provenance@v1
         with:
           subject-path: "./artifacts/*"
+
+# 何が嬉しいか
+# 改ざん検出：Plan 出力（例：plan.binary, plan.json）に出自の証拠を付け、後段（閉域の Apply など）で 検証できる。
+# 追跡可能：コミット、ブランチ、トリガーイベント、実行環境などが検証可能なメタデータとして残る。
+# ゼロトラスト：アーティファクト受け渡し時に「本当に GitHub Actions がそのコミットから生成した物か？」を暗号的に確認できる。

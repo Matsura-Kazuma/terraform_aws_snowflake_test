@@ -1,5 +1,10 @@
+# このワークフローは 非本番(dev/stg)環境に Terraform を適用するための GitHub Actions です。
+# OIDC で AWS に AssumeRole し、SOPS で秘密変数を復号、init → plan → apply を一連で実行します。
+# 各ブロックの意味と安全運用のポイントを解説します。
+
 name: Deploy NonProd（dev/stg）
 on:
+  # 手動実行専用
   workflow_dispatch:
     inputs:
       env:
@@ -7,16 +12,21 @@ on:
         required: true
         type: choice
         options: [dev, stg]
+      # Terraform スタックのパスを指定、stgとdevで使い分ける
       stack:
         description: "スタックパス（例: stacks/dev/ap-northeast-1/foundation）"
         required: true
         type: string
 permissions:
   contents: read
+  # OIDCでAWSにAssumeRole
   id-token: write
+  # 環境(Deployments)のステータス更新
   deployments: write
+# environment は Dev / Stg を自動切替
 environment:
   name: ${{ inputs.env == 'dev' && 'Dev' || 'Stg' }}
+# 同じ env×stack の同時実行を直列化します（進行中のジョブはキャンセルしない設定）。
 concurrency:
   group: deploy-${{ inputs.env }}-${{ inputs.stack }}
   cancel-in-progress: false
