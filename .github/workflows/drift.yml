@@ -1,5 +1,6 @@
 name: Drift Detect（週次）
 on:
+  # スケジュールリング、手動実行も可能
   schedule: [{ cron: "0 1 * * 1" }]
   workflow_dispatch: {}
 permissions:
@@ -9,13 +10,24 @@ jobs:
   drift:
     runs-on: ubuntu-latest
     steps:
+       # リポジトリを取得
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with: { terraform_version: "1.8.5" }
+        # GitHub OIDC で AWS 認証（vars.AWS_PLAN_ROLE_ARN を Assume）。
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+
+      # terraform plan -refresh-only -detailed-exitcode
+      # -refresh-only → state を最新リソースに合わせるだけの plan を作成。
+      # -detailed-exitcode → exit code で差分を判定。
+      # 0 = 差分なし（Drift なし）
+      # 2 = 差分あり（Drift あり）
+      # 1 = エラー
+      # set +e によりエラーで即停止せず終了コードを拾える。
+      # exit code を DRIFT_EXIT に環境変数として書き出す
       - name: dev foundation 例
         run: |
           WD=stacks/dev/ap-northeast-1/foundation
@@ -27,3 +39,12 @@ jobs:
           exit 0
       - name: 結果出力
         run: echo "Drift exit-code: $DRIFT_EXIT"
+
+# Terraform の思想は 「コードが真実のソース（Single Source of Truth）」 です。
+# つまり、
+# コード（HCL） = 望ましいインフラの定義
+# stateファイル = Terraform が把握している現状
+# 実リソース（AWSやSnowflakeなど） = 実際の環境
+# この3つが完全に一致しているのが理想状態です。
+# exit code 2 が出るということは、
+# 👉 実際の環境が、コードで定義された状態と一致していない ことを意味します。

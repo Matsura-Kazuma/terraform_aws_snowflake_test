@@ -1,51 +1,269 @@
-name: PR Preview（一時環境）
+name: PR Preview（一時環境：Plan→承認→Apply、DDBロック、通知、TTL連携）
+
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed, labeled]
+    types: [opened, synchronize, reopened, labeled, closed]
+
 permissions:
   contents: read
   id-token: write
+  pull-requests: write
+
 concurrency:
   group: preview-${{ github.event.pull_request.number }}
   cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.8.5"
+  PREVIEW_STACK: "stacks/preview/templates"
+  # 変更量のしきい値（作成+更新+削除の合計）
+  CHANGE_THRESHOLD: "10"
+
 jobs:
-  upsert:
+  # ─────────────────────────────
+  # 1) PLAN（作成/更新の差分のみ算出）
+  # ─────────────────────────────
+  plan:
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: hashicorp/setup-terraform@v3
-        with: { terraform_version: "1.8.5" }
-      - uses: aws-actions/configure-aws-credentials@v4
+        with: { terraform_version: ${{ env.TF_VERSION }} }
+
+      - name: AWS 認証（Preview）
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_PREVIEW_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - name: state key 生成
-        id: key
+
+      - name: State Key / Backend 設定を出力
+        id: meta
         run: |
           echo "key=preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate" >> $GITHUB_OUTPUT
-          echo "stack=stacks/preview/templates" >> $GITHUB_OUTPUT
-      - name: init
-        run: terraform -chdir=${{ steps.key.outputs.stack }} init -backend-config="bucket=${{ vars.PREVIEW_TFSTATE_BUCKET }}" -backend-config="key=${{ steps.key.outputs.key }}" -backend-config="region=${{ vars.AWS_REGION }}"
-      - name: apply（作成/更新）
-        run: terraform -chdir=${{ steps.key.outputs.stack }} apply -auto-approve
 
+      - name: Terraform Init（S3 + DynamoDB ロック）
+        run: |
+          terraform -chdir=${{ env.PREVIEW_STACK }} init \
+            -backend-config="bucket=${{ vars.PREVIEW_TFSTATE_BUCKET }}" \
+            -backend-config="key=${{ steps.meta.outputs.key }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ vars.PREVIEW_TF_LOCKS_TABLE }}"
+
+      - name: Terraform Plan（バイナリ出力）
+        run: |
+          terraform -chdir=${{ env.PREVIEW_STACK }} plan -input=false -lock=true -out=tfplan.bin
+          terraform -chdir=${{ env.PREVIEW_STACK }} show -json tfplan.bin > plan.json
+          terraform -chdir=${{ env.PREVIEW_STACK }} show -no-color tfplan.bin > plan.txt
+
+      - name: 変更量を評価（しきい値超過なら承認待ち）
+        id: evaluate
+        run: |
+          # create/update/delete の件数を合算
+          total=$(jq '[..|objects|select(has("change"))|.change.actions[]?]
+                      | group_by(.) | map({(.[0]): length}) | add
+                      | (.create // 0) + (.update // 0) + (.delete // 0)' \
+                      < ${{ env.PREVIEW_STACK }}/plan.json)
+          echo "total_changes=$total" >> $GITHUB_OUTPUT
+          if [ "${total}" -gt "${CHANGE_THRESHOLD}" ]; then
+            echo "needs_approval=true"  >> $GITHUB_OUTPUT
+          else
+            echo "needs_approval=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: PRにPlan結果をコメント（変更量含む）
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const planText = fs.readFileSync(`${process.env.PREVIEW_STACK}/plan.txt`, 'utf8').slice(0, 65000);
+            const total = `${{ steps.evaluate.outputs.total_changes }}`;
+            const threshold = process.env.CHANGE_THRESHOLD;
+            const need = `${{ steps.evaluate.outputs.needs_approval }}` === 'true' ? 'はい（承認待ち）' : 'いいえ（自動適用）';
+            const body = [
+              `### Preview Plan 結果`,
+              `- 変更量合計: **${total}**（しきい値: ${threshold}）`,
+              `- 承認が必要か: **${need}**`,
+              `<details><summary>terraform plan</summary>`,
+              '',
+              '```',
+              planText,
+              '```',
+              '',
+              '</details>'
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body
+            });
+
+      - name: Plan / JSON を保存（Apply ジョブに受け渡し）
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-plan-${{ github.event.pull_request.number }}
+          path: |
+            ${{ env.PREVIEW_STACK }}/tfplan.bin
+            ${{ env.PREVIEW_STACK }}/plan.json
+            ${{ env.PREVIEW_STACK }}/plan.txt
+
+      - name: TTL ラベルを自動付与（無ければデフォルト 72h）
+        if: github.event.action == 'opened'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number
+            });
+            const hasTTL = labels.some(l => /^ttl\/\d+$/i.test(l.name));
+            if (!hasTTL) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                labels: ['ttl/72']  // Janitor が拾う
+              });
+            }
+
+      - name: 失敗通知（Slack Webhook）
+        if: failure()
+        run: |
+          [ -z "${{ secrets.SLACK_WEBHOOK_URL }}" ] && exit 0
+          payload=$(jq -n --arg t ":x: Preview PLAN 失敗 PR #${{ github.event.pull_request.number }}" \
+                           --arg u "${{ github.server_url }}/${{ github.repository }}/pull/${{ github.event.pull_request.number }}" \
+                           '{text: ($t + "\n" + $u)}')
+          curl -s -X POST -H 'Content-Type: application/json' \
+               -d "$payload" "${{ secrets.SLACK_WEBHOOK_URL }}"
+
+  # ─────────────────────────────
+  # 2) APPLY（しきい値以内は自動、超過は承認後に実行）
+  # ─────────────────────────────
+  apply:
+    needs: [plan]
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: preview-plan-${{ github.event.pull_request.number }}
+          path: ./artifacts
+
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: ${{ env.TF_VERSION }} }
+
+      - name: AWS 認証（Preview）
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PREVIEW_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: State Key / Backend 設定を出力
+        id: meta
+        run: |
+          echo "key=preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate" >> $GITHUB_OUTPUT
+
+      - name: Terraform Init（S3 + DynamoDB ロック）
+        run: |
+          terraform -chdir=${{ env.PREVIEW_STACK }} init \
+            -backend-config="bucket=${{ vars.PREVIEW_TFSTATE_BUCKET }}" \
+            -backend-config="key=${{ steps.meta.outputs.key }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ vars.PREVIEW_TF_LOCKS_TABLE }}"
+
+      - name: しきい値超過なら手動承認を待機
+        if: needs.plan.outputs.evaluate_needs_approval == '' || needs.plan.outputs.evaluate_needs_approval == null
+        run: echo "（注）GitHub の制約で needs.plan.outputs を直接参照できないため、下の手動承認ステップ条件に委ねます。"
+        shell: bash
+
+      # 手動承認（trstringer/manual-approval は Issue ベース承認）
+      - name: 手動承認（大きな変更時のみ）
+        if: ${{ fromJSON('"' + steps.approval_guard.outputs.needs + '"') == 'true' }}
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: ${{ vars.PREVIEW_APPROVERS }}
+          minimum-approvals: 1
+          issue-title: "Preview Apply Approval: PR #${{ github.event.pull_request.number }}"
+          issue-body: "変更量がしきい値（${{ env.CHANGE_THRESHOLD }}）を超えました。Apply の承認をお願いします。"
+
+      # ↑ 上の if 判定用に evaluate の値を再計算（ダウンロードした plan.json から）
+      - id: approval_guard
+        name: 変更量の再計算（しきい値超過か）
+        run: |
+          total=$(jq '[..|objects|select(has("change"))|.change.actions[]?]
+                      | group_by(.) | map({(.[0]): length}) | add
+                      | (.create // 0) + (.update // 0) + (.delete // 0)' \
+                      < ./artifacts/plan.json)
+          echo "total=$total" >> $GITHUB_OUTPUT
+          if [ "${total}" -gt "${CHANGE_THRESHOLD}" ]; then
+            echo "needs=true"  >> $GITHUB_OUTPUT
+          else
+            echo "needs=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Apply（承認済み or しきい値以内）
+        if: ${{ steps.approval_guard.outputs.needs == 'false' || (steps.approval_guard.outputs.needs == 'true' && success()) }}
+        run: |
+          cp ./artifacts/tfplan.bin ${{ env.PREVIEW_STACK }}/tfplan.bin
+          terraform -chdir=${{ env.PREVIEW_STACK }} apply -auto-approve tfplan.bin
+
+      - name: 成功コメント
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: ":white_check_mark: Preview環境 Apply 完了（PR #"+context.payload.pull_request.number+"）"
+            });
+
+      - name: 失敗通知（Slack Webhook）
+        if: failure()
+        run: |
+          [ -z "${{ secrets.SLACK_WEBHOOK_URL }}" ] && exit 0
+          payload=$(jq -n --arg t ":x: Preview APPLY 失敗 PR #${{ github.event.pull_request.number }}" \
+                           --arg u "${{ github.server_url }}/${{ github.repository }}/pull/${{ github.event.pull_request.number }}" \
+                           '{text: ($t + "\n" + $u)}')
+          curl -s -X POST -H 'Content-Type: application/json' \
+               -d "$payload" "${{ secrets.SLACK_WEBHOOK_URL }}"
+
+  # ─────────────────────────────
+  # 3) DESTROY（PR が閉じたら破棄）
+  # ─────────────────────────────
   destroy:
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
-        with: { terraform_version: "1.8.5" }
+        with: { terraform_version: ${{ env.TF_VERSION }} }
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_PREVIEW_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - name: key
-        id: key
-        run: echo "key=preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate" >> $GITHUB_OUTPUT
-      - name: destroy
+
+      - name: Terraform Init（S3 + DynamoDB ロック）
         run: |
-          WD=stacks/preview/templates
-          terraform -chdir=$WD init -backend-config="bucket=${{ vars.PREVIEW_TFSTATE_BUCKET }}" -backend-config="key=${{ steps.key.outputs.key }}" -backend-config="region=${{ vars.AWS_REGION }}"
-          terraform -chdir=$WD destroy -auto-approve || true
+          terraform -chdir=${{ env.PREVIEW_STACK }} init \
+            -backend-config="bucket=${{ vars.PREVIEW_TFSTATE_BUCKET }}" \
+            -backend-config="key=preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ vars.PREVIEW_TF_LOCKS_TABLE }}"
+
+      - name: Destroy（失敗しても後続 Janitor が回収）
+        run: |
+          terraform -chdir=${{ env.PREVIEW_STACK }} destroy -auto-approve || true
+
+      - name: 結果コメント
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: ":broom: Preview環境を破棄しました（PR #"+context.payload.pull_request.number+"）"
+            });

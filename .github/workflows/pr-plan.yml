@@ -1,12 +1,16 @@
 name: PR Plan（静的解析 + OPA + コスト）
 on:
   pull_request:
+    # PRが「作成/更新/再オープン」されたときに動く。
+    # ドキュメント変更だけのPRは無視（無駄なPlanを回さない）
     types: [opened, synchronize, reopened]
     paths-ignore: ["docs/**","**/*.md"]
 permissions:
   contents: read
   id-token: write
+  #  PRへのコメント投稿（Infracost用）
   pull-requests: write
+  # 同じPR番号の並行実行を直列化（ジョブ渋滞・競合を防ぐ）
 concurrency:
   group: tf-${{ github.repository }}-${{ github.event.pull_request.number }}
   cancel-in-progress: false
@@ -28,30 +32,38 @@ jobs:
           role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
+        #  .pre-commit-config.yaml に定義したフック（例：terraform fmt/validate、tflint、trivy、checkov、gitleaks など）が一括で走る。
+        #   ここが通らないと以降のPlan前に早期に落とせる（品質ゲート）。
+        #   注：このステップが機能するには、リポ側に該当フックの定義が必要です。ツールに依存パッケージが要る場合は別途インストールが必要になることがあります。
       - name: pre-commit（fmt/validate/tflint/trivy/checkov/gitleaks）
         run: |
           pipx install pre-commit || true
           pre-commit run --all-files
-
+      # 以降のステップで ${{ steps.setwd.outputs.wd }} 参照に統一でき、別スタックへ差し替えも容易
       - name: 作業スタック（例: dev foundation）
         id: setwd
         run: echo "wd=stacks/dev/ap-northeast-1/foundation" >> $GITHUB_OUTPUT
 
+      # 指定スタックで初期化。S3+DynamoDB等のState設定を読み込む。
       - name: Terraform Init
         run: terraform -chdir=${{ steps.setwd.outputs.wd }} init -backend-config=${{ steps.setwd.outputs.wd }}/backend.hcl
 
+      # 変更差分をバイナリのPlanとして出力。後で機械判定やJSON化に使う。
       - name: Terraform Plan
         run: terraform -chdir=${{ steps.setwd.outputs.wd }} plan -input=false -lock=true -out=tfplan.bin
 
+      # PlanをJSONに変換。OPA/Conftestやコスト見積の入力にできる形式。
       - name: Plan JSON 生成
         run: terraform -chdir=${{ steps.setwd.outputs.wd }} show -json tfplan.bin > plan.json
 
+      # 事前に用意したRegoポリシー（policy/opa）で TerraformのPlan JSONを評価 し、違反があれば失敗。
+      # サプライチェーン的にはバイナリのダウンロードにハッシュ検証を入れるとより安全（改善案参照）。
       - name: Conftest (OPA) でポリシー評価
         run: |
           curl -sSL -o /usr/local/bin/conftest https://github.com/open-policy-agent/conftest/releases/download/v0.54.0/conftest_Linux_x86_64
           chmod +x /usr/local/bin/conftest
           conftest test --policy policy/opa ${{ steps.setwd.outputs.wd }}/plan.json
-
+       # Plan と JSON をアーティファクト化
       - name: Plan / JSON 保存
         uses: actions/upload-artifact@v4
         with:

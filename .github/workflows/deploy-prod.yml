@@ -8,10 +8,13 @@ on:
         type: string
 permissions:
   contents: read
+  # id-token: write → OIDC を使って AWS にフェデレート認証するために必要。
+  # deployments: write → GitHub Environments と連携可能（デプロイ状況を GitHub 上に反映）。
   id-token: write
   deployments: write
 environment:
   name: Prod
+# stacks/prd/ap-northeast-1/foundation に対して同時に 2つ Apply が走るのを防ぐ。
 concurrency:
   group: deploy-prod-${{ inputs.stack }}
   cancel-in-progress: false
@@ -48,6 +51,9 @@ jobs:
           config-file: policy/infracost.yml
 
       - name: 手動承認（Prod）
+        # Approver（承認者）を GitHub Issue ベースで呼び出し、手動での承認を待つ。
+        # vars.PROD_APPROVERS に登録されたユーザーだけが承認可能。
+        # コストチェック通過後に承認フローが入ることで安全性を確保。
         uses: trstringer/manual-approval@v1
         with:
           secret: ${{ github.TOKEN }}
