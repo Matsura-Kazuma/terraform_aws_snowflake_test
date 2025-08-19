@@ -1,9 +1,10 @@
-
 name: Drift Detect（週次）
 on:
   schedule: [{ cron: "0 1 * * 1" }]
   workflow_dispatch: {}
-permissions: { contents: read, id-token: write }
+permissions:
+  contents: read
+  id-token: write
 jobs:
   drift:
     runs-on: ubuntu-latest
@@ -21,6 +22,8 @@ jobs:
           terraform -chdir=$WD init -backend-config=$WD/backend.hcl
           set +e
           terraform -chdir=$WD plan -refresh-only -detailed-exitcode
-          echo "DRIFT_EXIT=$?" >> $GITHUB_ENV
+          code=$?
+          echo "DRIFT_EXIT=${code}" >> $GITHUB_ENV
           exit 0
-      - run: echo "Drift: $DRIFT_EXIT"
+      - name: 結果出力
+        run: echo "Drift exit-code: $DRIFT_EXIT"

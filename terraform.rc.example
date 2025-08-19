@@ -1,4 +1,8 @@
+# 日本語コメント: Provider 取得元を社内ミラーに固定する例。CI/開発者の両方で適用を推奨。
 provider_installation {
-  filesystem_mirror { path="/opt/terraform-providers" include=["hashicorp/*","Snowflake-Labs/*"] }
-  direct {}
+  filesystem_mirror {
+    path    = "/opt/terraform-providers"   # 社内ミラーへのパス
+    include = ["hashicorp/*", "Snowflake-Labs/*"]
+  }
+  direct {} # ミラーに無いもののみ直接取得
 }

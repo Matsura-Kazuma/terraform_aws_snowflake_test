@@ -1,14 +1,17 @@
-
 name: Deploy Prod（承認 + コストガード）
 on:
   workflow_dispatch:
     inputs:
-      stack: { description: "スタックパス", required: true, type: string }
+      stack:
+        description: "スタックパス（例: stacks/prd/ap-northeast-1/foundation）"
+        required: true
+        type: string
 permissions:
   contents: read
   id-token: write
   deployments: write
-environment: { name: Prod }
+environment:
+  name: Prod
 concurrency:
   group: deploy-prod-${{ inputs.stack }}
   cancel-in-progress: false
@@ -19,11 +22,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with: { terraform_version: "1.8.5" }
-      - name: AWS 認証
+
+      - name: AWS 認証（Prod 専用）
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_PRD_APPLY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+
       - name: SOPS 復号
         run: |
           echo "${{ secrets.SOPS_AGE_KEY }}" > /tmp/agekey.txt
@@ -31,26 +36,32 @@ jobs:
           if [ -f "${{ inputs.stack }}/secrets.enc.tfvars" ]; then
             sops -d "${{ inputs.stack }}/secrets.enc.tfvars" > "${{ inputs.stack }}/secrets.dec.tfvars"
           fi
-      - name: init
+
+      - name: Terraform Init
         run: terraform -chdir=${{ inputs.stack }} init -backend-config=${{ inputs.stack }}/backend.hcl
+
       - name: Infracost ポリシー（閾値超過で失敗）
         uses: infracost/actions/check-run@v3
         with:
           path: ${{ inputs.stack }}
           fail-on-diff: true
           config-file: policy/infracost.yml
-      - name: 手動承認
+
+      - name: 手動承認（Prod）
         uses: trstringer/manual-approval@v1
         with:
           secret: ${{ github.TOKEN }}
           approvers: ${{ vars.PROD_APPROVERS }}
           minimum-approvals: 1
           issue-title: "Prod Apply Approval: ${{ inputs.stack }}"
-          issue-body: "Apply 実行の承認をお願いします。"
-      - name: plan
+          issue-body: "Infracost チェック通過。Apply の承認をお願いします。"
+
+      - name: Terraform Plan
         run: terraform -chdir=${{ inputs.stack }} plan -var-file=secrets.dec.tfvars -input=false -lock=true -out=tfplan.bin
-      - name: apply
+
+      - name: Terraform Apply
         run: terraform -chdir=${{ inputs.stack }} apply -input=false -auto-approve tfplan.bin
+
       - name: 復号ファイル削除
         if: always()
         run: rm -f ${{ inputs.stack }}/secrets.dec.tfvars

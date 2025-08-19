@@ -1,14 +1,11 @@
 name: Terraform Run（Composite）
-description: OIDC + SOPS + init
+description: OIDC + SOPS 復号 + init の共通化
 inputs:
-  stack:
-    required: true
-  role_arn:
-    required: true
-  region:
-    required: true
+  stack: { required: true }
+  role_arn: { required: true }
+  region: { required: true }
 runs:
-  using: composite
+  using: "composite"
   steps:
     - uses: aws-actions/configure-aws-credentials@v4
       with:

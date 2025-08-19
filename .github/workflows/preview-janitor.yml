@@ -1,0 +1,43 @@
+name: Preview Janitor（TTL で自動破棄）
+on:
+  schedule:
+    - cron: "0 * * * *"   # 毎時
+permissions:
+  contents: read
+  pull-requests: read
+  id-token: write
+jobs:
+  janitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリ取得
+        uses: actions/checkout@v4
+      - name: GH CLI セットアップ
+        uses: actions/setup-node@v4
+      - name: TTL 解析と Destroy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          PREVIEW_TFSTATE_BUCKET: ${{ vars.PREVIEW_TFSTATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          echo "Open PR を列挙し TTL を解析（ラベル: ttl/<hours>）。期限超過した PR の preview を破棄します。"
+          prs=$(gh pr list --state open --json number,labels,updatedAt | jq -c '.[]')
+          for pr in $prs; do
+            num=$(echo "$pr" | jq -r '.number')
+            labels=$(echo "$pr" | jq -r '[.labels[].name] | join(",")')
+            ttl=$(echo "$labels" | grep -oE 'ttl/[0-9]+' | cut -d/ -f2 || true)
+            if [ -z "$ttl" ]; then continue; fi
+            updated=$(echo "$pr" | jq -r '.updatedAt')
+            # 期限判定（単純化: 最終更新 + TTL 時間）
+            if [ -n "$updated" ]; then
+              expire=$(date -u -d "$updated +${ttl} hour" +%s)
+              now=$(date -u +%s)
+              if [ "$now" -gt "$expire" ]; then
+                echo "PR#$num TTL超過 → Destroy 実行"
+                WD=stacks/preview/templates
+                terraform -chdir=$WD init -backend-config="bucket=$PREVIEW_TFSTATE_BUCKET" -backend-config="key=preview/pr-$num/terraform.tfstate" -backend-config="region=$AWS_REGION"
+                terraform -chdir=$WD destroy -auto-approve || true
+              fi
+            fi
+          done

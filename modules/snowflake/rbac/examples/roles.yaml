@@ -2,9 +2,11 @@ roles:
   - name: SYSADMIN_READONLY
     comment: "基盤参照専用"
     grant_to_roles: []
+
   - name: APP_ADMIN
     comment: "アプリ管理者"
     grant_to_roles: ["SYSADMIN_READONLY"]
+
   - name: APP_USER
     comment: "アプリ一般ユーザ"
     grant_to_roles: ["SYSADMIN_READONLY"]

@@ -1,2 +1,2 @@
 # github-oidc
-人手で実行してください。
+- 詳細は RUNBOOKS を参照。

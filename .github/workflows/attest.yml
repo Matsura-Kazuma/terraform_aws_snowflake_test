@@ -1,16 +1,20 @@
-
-name: Plan アーティファクト Provenance
+name: Plan Provenance（供給鎖）
 on:
   workflow_run:
-    workflows: ["PR Plan（静的解析 + コスト見積 + Plan）"]
+    workflows: ["PR Plan（静的解析 + OPA + コスト）"]
     types: [completed]
-permissions: { id-token: write, contents: write }
+permissions:
+  id-token: write
+  contents: write
 jobs:
   attest:
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/download-artifact@v4
-        with: { name: tfplan, path: ./artifacts }
+        with:
+          name: plan-and-json
+          path: ./artifacts
       - uses: actions/attest-build-provenance@v1
-        with: { subject-path: "./artifacts/*" }
+        with:
+          subject-path: "./artifacts/*"

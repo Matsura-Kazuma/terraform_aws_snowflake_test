@@ -1,5 +1,4 @@
-
-name: PR Plan（静的解析 + コスト見積 + Plan）
+name: PR Plan（静的解析 + OPA + コスト）
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -15,30 +14,53 @@ jobs:
   plan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with: { persist-credentials: false }
-      - uses: hashicorp/setup-terraform@v3
-        with: { terraform_version: "1.8.5" }
+      - name: リポジトリ取得
+        uses: actions/checkout@v4
+
+      - name: Terraform セットアップ
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+
       - name: AWS 認証（Plan用 Read）
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+
       - name: pre-commit（fmt/validate/tflint/trivy/checkov/gitleaks）
         run: |
           pipx install pre-commit || true
           pre-commit run --all-files
-      - name: 作業ディレクトリ（例）
+
+      - name: 作業スタック（例: dev foundation）
         id: setwd
         run: echo "wd=stacks/dev/ap-northeast-1/foundation" >> $GITHUB_OUTPUT
-      - name: init
+
+      - name: Terraform Init
         run: terraform -chdir=${{ steps.setwd.outputs.wd }} init -backend-config=${{ steps.setwd.outputs.wd }}/backend.hcl
-      - name: plan
+
+      - name: Terraform Plan
         run: terraform -chdir=${{ steps.setwd.outputs.wd }} plan -input=false -lock=true -out=tfplan.bin
-      - name: Plan 保存
+
+      - name: Plan JSON 生成
+        run: terraform -chdir=${{ steps.setwd.outputs.wd }} show -json tfplan.bin > plan.json
+
+      - name: Conftest (OPA) でポリシー評価
+        run: |
+          curl -sSL -o /usr/local/bin/conftest https://github.com/open-policy-agent/conftest/releases/download/v0.54.0/conftest_Linux_x86_64
+          chmod +x /usr/local/bin/conftest
+          conftest test --policy policy/opa ${{ steps.setwd.outputs.wd }}/plan.json
+
+      - name: Plan / JSON 保存
         uses: actions/upload-artifact@v4
-        with: { name: tfplan, path: ${{ steps.setwd.outputs.wd }}/tfplan.bin }
-      - name: Infracost コメント
+        with:
+          name: plan-and-json
+          path: |
+            ${{ steps.setwd.outputs.wd }}/tfplan.bin
+            ${{ steps.setwd.outputs.wd }}/plan.json
+
+      - name: Infracost コメント（コスト見積）
         uses: infracost/actions/comment@v3
         with:
           path: ${{ steps.setwd.outputs.wd }}

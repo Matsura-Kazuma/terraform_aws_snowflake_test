@@ -1,28 +1,44 @@
+# 日本語コメント: 失敗時にコミットを阻止するガード
 repos:
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.92.0
     hooks:
       - id: terraform_fmt
       - id: terraform_validate
+
   - repo: https://github.com/terraform-linters/tflint
     rev: v0.53.0
     hooks:
       - id: tflint
+
   - repo: https://github.com/aquasecurity/trivy
     rev: v0.53.0
     hooks:
       - id: trivy
         args: ["--config=policy/trivy/config.yaml","--exit-code","1","--quiet","."]
+
   - repo: https://github.com/bridgecrewio/checkov
     rev: 3.2.323
     hooks:
       - id: checkov
         args: ["-f",".","--config-file","policy/checkov/.checkov.yaml"]
+
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.18.4
     hooks:
       - id: gitleaks
+
   - repo: https://github.com/jorisroovers/gitlint
     rev: v0.19.1
     hooks:
       - id: gitlint
+
+  # 日本語コメント: OPA/Conftest はローカルフックにする（go バイナリが必要）
+  - repo: local
+    hooks:
+      - id: conftest_plan
+        name: conftest on plan.json
+        entry: bash -lc 'test -f $(git rev-parse --show-toplevel)/policy/opa/enable_precommit && conftest test --policy policy/opa $(git rev-parse --show-toplevel)/stacks/dev/ap-northeast-1/foundation/plan.json || true'
+        language: system
+        files: ^stacks/.*\.json$
+        pass_filenames: false

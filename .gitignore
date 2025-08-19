@@ -1,16 +1,23 @@
-# 生成物等を除外
+# === Terraform 生成物 ===
 **/.terraform/*
 *.tfstate
 *.tfstate.*
 crash.log
 *.tfplan
 .terraform.lock.hcl
+
+# === 復号ファイル（コミット禁止）===
+**/*.dec.tfvars
+
+# === ローカル/CI 生成物 ===
 .DS_Store
 .venv
-dist/
 node_modules/
-**/*.dec.tfvars
+dist/
+target/
+artifacts/
+coverage/
+
+# === 鍵ファイル ===
 security/keys/*
 !security/keys/.gitkeep
-**/tfplan.bin
-artifacts/

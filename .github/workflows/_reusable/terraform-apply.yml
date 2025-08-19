@@ -1,8 +1,0 @@
-name: 再利用 Apply
-on:
-  workflow_call: {}
-jobs:
-  apply:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4

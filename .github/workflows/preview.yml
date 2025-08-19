@@ -1,8 +1,7 @@
-
 name: PR Preview（一時環境）
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened, closed, labeled]
 permissions:
   contents: read
   id-token: write
@@ -28,8 +27,9 @@ jobs:
           echo "stack=stacks/preview/templates" >> $GITHUB_OUTPUT
       - name: init
         run: terraform -chdir=${{ steps.key.outputs.stack }} init -backend-config="bucket=${{ vars.PREVIEW_TFSTATE_BUCKET }}" -backend-config="key=${{ steps.key.outputs.key }}" -backend-config="region=${{ vars.AWS_REGION }}"
-      - name: apply（作成）
+      - name: apply（作成/更新）
         run: terraform -chdir=${{ steps.key.outputs.stack }} apply -auto-approve
+
   destroy:
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest

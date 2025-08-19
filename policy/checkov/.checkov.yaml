@@ -2,4 +2,5 @@ framework: terraform
 compact: true
 quiet: true
 soft-fail: false
-skip-path: ["modules/snowflake/rbac"]
+skip-path:
+  - modules/snowflake/rbac
