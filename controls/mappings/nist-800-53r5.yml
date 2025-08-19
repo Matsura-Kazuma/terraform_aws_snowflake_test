@@ -1,0 +1,16 @@
+# nist-800-53r5.yml — NIST SP 800-53 Rev.5 対応表（抜粋）
+framework: NIST_800_53_R5
+owner: team-gov
+mappings:
+  - id: "AC-2 Account Management"
+    implemented_by:
+      - procedure: procedures/access-review.md
+      - ci: ".github/workflows/*（Apply 前の承認）"
+  - id: "CM-2 Baseline Configuration"
+    implemented_by:
+      - iac: "stacks/*（IaC が唯一の構成源）"
+      - tests: "drift.yml（週次ドリフト検知）"
+  - id: "RA-5 Vulnerability Monitoring and Scanning"
+    implemented_by:
+      - ci: "pre-commit（trivy/checkov）"
+      - evidence: "evidence/samples/*_scan-summary.sarif"

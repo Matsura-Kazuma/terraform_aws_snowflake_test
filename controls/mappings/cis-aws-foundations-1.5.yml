@@ -1,0 +1,24 @@
+# cis-aws-foundations-1.5.yml — CIS AWS Foundations 1.5 対応表（抜粋）
+framework: CIS_AWS_Foundations_1_5
+owner: team-security
+mappings:
+  - id: "1.1"   # ルートアカウントのMFA
+    implemented_by:
+      - procedure: procedures/access-review.md#root-mfa
+      - evidence: evidence/samples/2025-01-01_root-mfa-check.txt
+    verification:
+      - manual: "四半期ごとに root MFA 設定を目視確認"
+  - id: "2.1"   # CloudTrail 有効化
+    implemented_by:
+      - iac: stacks/*/cloudtrail/ (該当スタック存在時)
+      - policy: policy/checkov/.checkov.yaml
+      - ci: .github/workflows/pr-plan.yml
+    evidence_hints:
+      - artifact: "CloudTrail 設定の Plan JSON"
+      - artifact: "Checkov レポート"
+  - id: "3.1"   # ログの保存先 S3 の暗号化・公開ブロック
+    implemented_by:
+      - iac: modules/aws/s3-bucket
+      - opa: policy/opa/terraform.rego
+    evidence_hints:
+      - artifact: "Plan/Show JSON (SSE, Public Block)"

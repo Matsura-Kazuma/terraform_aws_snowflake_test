@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EvidenceRecord",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "controls",
+    "framework",
+    "produced_at",
+    "produced_by",
+    "environment",
+    "artifacts",
+    "hashes"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "一意ID（例: UUID）"
+    },
+    "title": {
+      "type": "string"
+    },
+    "controls": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "framework": {
+      "type": "string",
+      "description": "CIS/ISO/NIST/ORG_CUSTOM など"
+    },
+    "produced_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "produced_by": {
+      "type": "object",
+      "required": [
+        "actor",
+        "system"
+      ],
+      "properties": {
+        "actor": {
+          "type": "string",
+          "description": "人名 or CI"
+        },
+        "system": {
+          "type": "string",
+          "description": "出自（GitHub Actions 等）"
+        },
+        "run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commit_sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "environment": {
+      "type": "string",
+      "enum": [
+        "Dev",
+        "Stg",
+        "Prod",
+        "Preview"
+      ]
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "retention_until": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "review": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "rejected",
+            "needs-review"
+          ]
+        },
+        "reviewer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

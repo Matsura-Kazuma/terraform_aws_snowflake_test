@@ -1,0 +1,1 @@
+pre-commit: fmt/validate/tflint/trivy/checkov/gitleaks すべて PASS

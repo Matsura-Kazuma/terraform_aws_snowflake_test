@@ -1,0 +1,2 @@
+id,title,owner,severity,likelihood,status,notes
+RISK-001,リージョン逸脱,Platform,High,Medium,Open,RequestedRegion の Deny で緩和

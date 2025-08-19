@@ -1,0 +1,15 @@
+# custom-controls.yml — 組織独自統制（例）
+framework: ORG_CUSTOM_V1
+owner: team-platform
+mappings:
+  - id: "ORG-SEC-01 Require SSE-KMS for S3"
+    implemented_by:
+      - opa: policy/opa/terraform.rego
+      - module: modules/aws/s3-bucket
+    automated_test:
+      - conftest: tests/opa/controls.rego
+  - id: "ORG-OPS-02 PR Preview must auto-destroy"
+    implemented_by:
+      - ci: .github/workflows/preview.yml, preview-janitor.yml
+    evidence_hints:
+      - artifact: "Destroy ログ (PR Close)"

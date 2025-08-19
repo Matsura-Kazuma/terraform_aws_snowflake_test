@@ -1,0 +1,18 @@
+# iso27001-2022.yml — ISO/IEC 27001:2022 Annex A 対応表（抜粋）
+framework: ISO27001_2022
+owner: team-compliance
+mappings:
+  - id: "A.5.23 Information security for use of cloud services"
+    implemented_by:
+      - contract: "CSP 契約/SLA/責任分界"
+      - iac: "providers/*.tf, modules/*"
+      - ci: ".github/workflows/*（OIDC / 最小権限）"
+    evidence_hints:
+      - doc: "ベンダー監査レポート・SOC 2 抜粋"
+      - artifact: "Attest（build provenance）ログ"
+  - id: "A.8.24 Secure coding"
+    implemented_by:
+      - ci: "pre-commit（tflint/trivy/checkov/gitleaks）"
+      - policy: "policy/opa/terraform.rego"
+    evidence_hints:
+      - artifact: "PR の静的解析ログ/SARIF"

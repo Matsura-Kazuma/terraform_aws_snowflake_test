@@ -1,0 +1,15 @@
+# control-tests.yaml — 自動検証の宣言的定義（抜粋）
+tests:
+  - name: drift-weekly
+    description: "週次ドリフト検知が exit-code=0/2 を返すこと"
+    pipeline: ".github/workflows/drift.yml"
+    evidence:
+      require:
+        - "controls/evidence/samples/*drift*.json"
+    enforcement: "advisory"
+  - name: security-static-scan
+    description: "PR 時に IaC スキャンが走ること"
+    pipeline: ".github/workflows/pr-plan.yml"
+    evidence:
+      sarif: true
+    enforcement: "mandatory"
