@@ -93,8 +93,7 @@ make apply ENV=dev REGION=ap-northeast-1 TARGET=foundation
 
 # 4) OPA で Plan を評価（任意/推奨）
 make opa-test ENV=dev TARGET=foundation
-```
-
+```aa
 ---
 
 ## CI/CD パイプライン詳細
