@@ -5,6 +5,7 @@
 crash.log
 *.tfplan
 .terraform.lock.hcl
+.devcontainer/certs/*
 
 # === 復号ファイル（コミット禁止）===
 **/*.dec.tfvars
