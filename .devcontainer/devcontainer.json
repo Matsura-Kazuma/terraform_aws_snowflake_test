@@ -1,0 +1,6 @@
+{
+  "name": "quick-test",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "remoteUser": "vscode",
+  "postCreateCommand": "echo OK"
+}
